@@ -196,8 +196,6 @@ package "Domain" {
 enum UserType {
   Student
   Professor
-  Worker
-  Alumni
   Guest
 }
 
