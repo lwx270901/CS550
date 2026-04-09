@@ -1,0 +1,280 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+left to right direction
+
+package "Client" {
+  class WebClient <<boundary>> {
+    +login(email, password)
+    +logout()
+    +searchMail(criteria)
+    +openEmail(emailId)
+    +submitCorrection(emailId, categoryId)
+  }
+
+  class DashboardView <<boundary>> {
+    +showMailboxOverview()
+    +showUrgentEmails()
+  }
+
+  class EmailListView <<boundary>> {
+    +renderEmailList()
+    +sortByPriority()
+  }
+
+  class EmailDetailView <<boundary>> {
+    +renderEmailDetail()
+    +showSuggestedActions()
+  }
+
+  class ProfileSettingsView <<boundary>> {
+    +editProfile()
+    +manageCategories()
+    +manageCustomActions()
+  }
+}
+
+package "Server" {
+  class DoormanAPI <<controller>> {
+    +login()
+    +searchMail()
+    +sendMail()
+    +replyMail()
+    +updateProfile()
+    +requestAnalysis()
+  }
+
+  class AuthService <<service>> {
+    +authenticate(email, password): SessionToken
+    +invalidate(token)
+  }
+
+  class MailService <<service>> {
+    +receiveEmail(rawMail)
+    +sendEmail(email)
+    +replyEmail(emailId, body)
+    +storeEmail(email)
+  }
+
+  class EmailPreprocessor <<service>> {
+    +extractStructuredData(email): Email
+    +normalizeContent(email): Email
+    +removeNoise(email): Email
+  }
+
+  class SearchService <<service>> {
+    +search(criteria): List<Email>
+  }
+
+  class CategoryManager <<service>> {
+    +createCategory(userId, name): Category
+    +modifyCategory(categoryId, name)
+    +applyCategory(emailId, categoryId)
+  }
+
+  class MailboxOrganizer <<service>> {
+    +assignMailbox(email, category)
+    +moveToUncategorized(email)
+  }
+
+  class NotificationService <<service>> {
+    +notifyImportantEmail(email)
+  }
+}
+
+package "LLM Module" {
+  class LLMAnalyzer <<service>> {
+    +classify(email, profile): Category
+    +scorePriority(email, profile): int
+    +suggestActions(email, profile): List<SuggestedAction>
+  }
+
+  class HallucinationMitigator <<service>> {
+    +constrainLabels()
+    +validateOutput(email, rawOutput): bool
+    +reprocessInvalidOutput(rawOutput)
+  }
+
+  class PromptManager <<service>> {
+    +buildPrompt(profile): String
+    +updatePrompt(correction)
+  }
+
+  class FeedbackLearner <<service>> {
+    +recordCorrection(correction)
+    +learnFromCorrections()
+  }
+}
+
+package "Integration" {
+  class ExternalMailGateway <<gateway>> {
+    +fetchIncomingEmails()
+    +sendToExternalServer(email)
+  }
+}
+
+package "Domain" {
+  class User <<entity>> {
+    +userId: String
+    +emailAddress: String
+    +passwordHash: String
+  }
+
+  class SessionToken <<entity>> {
+    +token: String
+    +expiresAt: DateTime
+  }
+
+  class UserProfile <<entity>> {
+    +userType: UserType
+    +interests: List<String>
+    +affiliations: List<String>
+  }
+
+  class ImportantContact <<entity>> {
+    +name: String
+    +emailAddress: String
+  }
+
+  class Mailbox <<entity>> {
+    +mailboxId: String
+    +name: String
+    +type: MailboxType
+  }
+
+  class Category <<entity>> {
+    +categoryId: String
+    +name: String
+    +source: CategorySource
+  }
+
+  class Email <<entity>> {
+    +emailId: String
+    +sender: String
+    +subject: String
+    +body: Text
+    +receivedAt: DateTime
+    +priorityScore: int
+  }
+
+  class Attachment <<entity>> {
+    +attachmentId: String
+    +fileName: String
+    +mimeType: String
+    +size: long
+  }
+
+  class AnalysisResult <<entity>> {
+    +resultId: String
+    +confidence: float
+    +validated: bool
+    +summary: String
+  }
+
+  class SuggestedAction <<entity>> {
+    +actionId: String
+    +type: ActionType
+    +reason: String
+    +source: String
+  }
+
+  class CustomActionTemplate <<entity>> {
+    +templateId: String
+    +name: String
+    +description: String
+    +parameters: String
+  }
+
+  class CorrectionRecord <<entity>> {
+    +correctionId: String
+    +oldCategory: String
+    +newCategory: String
+    +correctedAt: DateTime
+  }
+}
+
+enum UserType {
+  Student
+  Professor
+  Worker
+  Alumni
+  Guest
+}
+
+enum MailboxType {
+  Inbox
+  CategoryBox
+  Important
+  Uncategorized
+}
+
+enum CategorySource {
+  LLM
+  UserDefined
+  Corrected
+}
+
+enum ActionType {
+  Reply
+  ReplyAll
+  Archive
+  Ignore
+  MarkImportant
+  AddToCalendar
+  Custom
+}
+
+User "1" -- "1" UserProfile
+User "1" o-- "0..*" Mailbox
+UserProfile "1" o-- "0..*" ImportantContact
+User "1" o-- "0..*" CustomActionTemplate
+User "1" -- "0..*" SessionToken
+User "1" -- "0..*" CorrectionRecord
+
+Mailbox "1" o-- "0..*" Email
+Email "1" o-- "0..*" Attachment
+Email "1" --> "0..1" AnalysisResult
+AnalysisResult "1" --> "1" Category
+AnalysisResult "1" o-- "0..*" SuggestedAction
+CorrectionRecord "0..*" --> "1" Email
+
+WebClient --> DoormanAPI
+WebClient --> DashboardView
+WebClient --> EmailListView
+WebClient --> EmailDetailView
+WebClient --> ProfileSettingsView
+
+DoormanAPI --> AuthService
+DoormanAPI --> MailService
+DoormanAPI --> SearchService
+DoormanAPI --> CategoryManager
+DoormanAPI --> LLMAnalyzer
+DoormanAPI --> FeedbackLearner
+
+MailService --> ExternalMailGateway
+MailService --> EmailPreprocessor
+MailService --> MailboxOrganizer
+MailService --> NotificationService
+MailService --> Email
+
+CategoryManager --> Category
+MailboxOrganizer --> Mailbox
+SearchService --> Email
+AuthService --> SessionToken
+AuthService --> User
+
+LLMAnalyzer --> HallucinationMitigator
+LLMAnalyzer --> PromptManager
+LLMAnalyzer --> UserProfile
+LLMAnalyzer --> AnalysisResult
+FeedbackLearner --> CorrectionRecord
+FeedbackLearner --> PromptManager
+HallucinationMitigator --> AnalysisResult
+
+DashboardView --> Mailbox
+EmailListView --> Email
+EmailDetailView --> AnalysisResult
+ProfileSettingsView --> UserProfile
+ProfileSettingsView --> Category
+ProfileSettingsView --> CustomActionTemplate
+@enduml
