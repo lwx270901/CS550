@@ -1,278 +1,174 @@
 @startuml
 skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
 left to right direction
 
 package "Client" {
-  class WebClient <<boundary>> {
+  class MailClient {
+    -clientId: String
     +login(email, password)
-    +logout()
-    +searchMail(criteria)
+    +searchMail(keyword)
     +openEmail(emailId)
-    +submitCorrection(emailId, categoryId)
-  }
-
-  class DashboardView <<boundary>> {
-    +showMailboxOverview()
-    +showUrgentEmails()
-  }
-
-  class EmailListView <<boundary>> {
-    +renderEmailList()
-    +sortByPriority()
-  }
-
-  class EmailDetailView <<boundary>> {
-    +renderEmailDetail()
-    +showSuggestedActions()
-  }
-
-  class ProfileSettingsView <<boundary>> {
-    +editProfile()
-    +manageCategories()
-    +manageCustomActions()
+    +correctCategory(emailId, categoryId)
   }
 }
 
-package "Server" {
-  class DoormanAPI <<controller>> {
-    +login()
-    +searchMail()
-    +sendMail()
-    +replyMail()
-    +updateProfile()
-    +requestAnalysis()
-  }
-
-  class AuthService <<service>> {
-    +authenticate(email, password): SessionToken
-    +invalidate(token)
-  }
-
-  class MailService <<service>> {
+package "Core Services" {
+  class MailServer {
+    -serverId: String
     +receiveEmail(rawMail)
-    +sendEmail(email)
-    +replyEmail(emailId, body)
     +storeEmail(email)
+    +sendForAnalysis(email)
   }
 
-  class EmailPreprocessor <<service>> {
-    +extractStructuredData(email): Email
-    +normalizeContent(email): Email
-    +removeNoise(email): Email
+  class EmailPreprocessor {
+    +extractData(rawMail): Email
+    +cleanContent(email): Email
+    +normalizeMetadata(email): Email
   }
 
-  class SearchService <<service>> {
-    +search(criteria): List<Email>
-  }
-
-  class CategoryManager <<service>> {
-    +createCategory(userId, name): Category
-    +modifyCategory(categoryId, name)
-    +applyCategory(emailId, categoryId)
-  }
-
-  class MailboxOrganizer <<service>> {
+  class MailboxOrganizer {
     +assignMailbox(email, category)
     +moveToUncategorized(email)
   }
 
-  class NotificationService <<service>> {
-    +notifyImportantEmail(email)
-  }
-}
-
-package "LLM Module" {
-  class LLMAnalyzer <<service>> {
-    +classify(email, profile): Category
+  class LLMModule {
+    +classifyEmail(email, profile): Category
     +scorePriority(email, profile): int
-    +suggestActions(email, profile): List<SuggestedAction>
+    +suggestActions(email, profile): SuggestedAction[*]
   }
 
-  class HallucinationMitigator <<service>> {
-    +constrainLabels()
-    +validateOutput(email, rawOutput): bool
-    +reprocessInvalidOutput(rawOutput)
+  class HallucinationMitigator {
+    +validateOutput(email, output): boolean
+    +reprocessInvalidOutput(output)
   }
 
-  class PromptManager <<service>> {
-    +buildPrompt(profile): String
-    +updatePrompt(correction)
-  }
-
-  class FeedbackLearner <<service>> {
-    +recordCorrection(correction)
-    +learnFromCorrections()
-  }
-}
-
-package "Integration" {
-  class ExternalMailGateway <<gateway>> {
-    +fetchIncomingEmails()
-    +sendToExternalServer(email)
+  interface ExternalMailService {
+    +fetchIncomingMail()
+    +sendMail(email)
   }
 }
 
 package "Domain" {
-  class User <<entity>> {
-    +userId: String
-    +emailAddress: String
-    +passwordHash: String
+  class User {
+    -userId: String
+    -emailAddress: String
+    +login()
+    +logout()
+    +updateProfile()
   }
 
-  class SessionToken <<entity>> {
-    +token: String
-    +expiresAt: DateTime
+  class UserProfile {
+    -userType: UserType
+    -interests: String[*]
+    -affiliations: String[*]
+    +editProfile()
   }
 
-  class UserProfile <<entity>> {
-    +userType: UserType
-    +interests: List<String>
-    +affiliations: List<String>
+  class ImportantContact {
+    -contactEmail: String
+    -name: String
   }
 
-  class ImportantContact <<entity>> {
-    +name: String
-    +emailAddress: String
+  abstract class Mailbox {
+    -mailboxId: String
+    -name: String
+    +addEmail(email)
+    +removeEmail(email)
   }
 
-  class Mailbox <<entity>> {
-    +mailboxId: String
-    +name: String
-    +type: MailboxType
+  class AllMailbox
+  class CategoryMailbox
+  class UncategorizedMailbox
+
+  abstract class Category {
+    -categoryId: String
+    -label: String
   }
 
-  class Category <<entity>> {
-    +categoryId: String
-    +name: String
-    +source: CategorySource
+  class PredefinedCategory
+  class CustomCategory
+
+  class Email {
+    -emailId: String
+    -sender: String
+    -receiver: String
+    -subject: String
+    -body: Text
+    -receivedAt: DateTime
   }
 
-  class Email <<entity>> {
-    +emailId: String
-    +sender: String
-    +subject: String
-    +body: Text
-    +receivedAt: DateTime
-    +priorityScore: int
+  class Attachment {
+    -fileName: String
+    -mimeType: String
+    -size: long
   }
 
-  class Attachment <<entity>> {
-    +attachmentId: String
-    +fileName: String
-    +mimeType: String
-    +size: long
+  class EmailAnalysis {
+    -priorityScore: int
+    -validated: boolean
+    +updateResult()
   }
 
-  class AnalysisResult <<entity>> {
-    +resultId: String
-    +confidence: float
-    +validated: bool
-    +summary: String
+  abstract class SuggestedAction {
+    -actionName: String
+    -reason: String
   }
 
-  class SuggestedAction <<entity>> {
-    +actionId: String
-    +type: ActionType
-    +reason: String
-    +source: String
+  class StandardAction
+  class CustomAction
+
+  class CorrectionRecord {
+    -correctedAt: DateTime
+    -oldCategory: String
+    -newCategory: String
   }
 
-  class CustomActionTemplate <<entity>> {
-    +templateId: String
-    +name: String
-    +description: String
-    +parameters: String
-  }
-
-  class CorrectionRecord <<entity>> {
-    +correctionId: String
-    +oldCategory: String
-    +newCategory: String
-    +correctedAt: DateTime
+  enum UserType {
+    Student
+    Professor
+    Worker
+    Alumni
+    Guest
   }
 }
 
-enum UserType {
-  Student
-  Professor
-  Guest
-}
+Mailbox <|-- AllMailbox
+Mailbox <|-- CategoryMailbox
+Mailbox <|-- UncategorizedMailbox
 
-enum MailboxType {
-  Inbox
-  CategoryBox
-  Important
-  Uncategorized
-}
+Category <|-- PredefinedCategory
+Category <|-- CustomCategory
 
-enum CategorySource {
-  LLM
-  UserDefined
-  Corrected
-}
+SuggestedAction <|-- StandardAction
+SuggestedAction <|-- CustomAction
 
-enum ActionType {
-  Reply
-  ReplyAll
-  Archive
-  Ignore
-  MarkImportant
-  AddToCalendar
-  Custom
-}
+User "1" *-- "1" UserProfile : owns
+User "1" *-- "1" AllMailbox : has
+User "1" *-- "0..*" CategoryMailbox : creates
+User "1" *-- "1" UncategorizedMailbox : has
+UserProfile "1" *-- "0..*" ImportantContact : contains
+AllMailbox "1" *-- "0..*" Email : stores
+Email "1" *-- "0..*" Attachment : contains
+Email "1" *-- "0..1" EmailAnalysis : has
+EmailAnalysis "1" *-- "0..*" SuggestedAction : recommends
 
-User "1" -- "1" UserProfile
-User "1" o-- "0..*" Mailbox
-UserProfile "1" o-- "0..*" ImportantContact
-User "1" o-- "0..*" CustomActionTemplate
-User "1" -- "0..*" SessionToken
-User "1" -- "0..*" CorrectionRecord
+CategoryMailbox "1" o-- "1" Category : represents
+User "1" o-- "0..*" CorrectionRecord : submits
 
-Mailbox "1" o-- "0..*" Email
-Email "1" o-- "0..*" Attachment
-Email "1" --> "0..1" AnalysisResult
-AnalysisResult "1" --> "1" Category
-AnalysisResult "1" o-- "0..*" SuggestedAction
-CorrectionRecord "0..*" --> "1" Email
+MailClient "1" -- "1" User : usedBy
+MailClient "1" -- "1" MailServer : sends requests to
+MailServer "1" --> "1" EmailPreprocessor : preprocesses with
+MailServer "1" --> "1" LLMModule : requests analysis from
+MailServer "1" --> "1" MailboxOrganizer : organizes with
+MailServer "1" ..> "1" ExternalMailService : uses
+LLMModule "1" --> "1" HallucinationMitigator : validates with
+LLMModule "1" --> "0..*" Email : analyzes
+LLMModule "1" --> "1" UserProfile : reads
+MailboxOrganizer "1" --> "0..*" CategoryMailbox : assigns to
+MailboxOrganizer "1" --> "1" UncategorizedMailbox : fallback to
+CategoryMailbox "0..1" -- "0..*" Email : classifiedIn
+UncategorizedMailbox "0..1" -- "0..*" Email : holds
+CorrectionRecord "1" --> "1" EmailAnalysis : updates
+CorrectionRecord "1" --> "1" Email : corrects
 
-WebClient --> DoormanAPI
-WebClient --> DashboardView
-WebClient --> EmailListView
-WebClient --> EmailDetailView
-WebClient --> ProfileSettingsView
-
-DoormanAPI --> AuthService
-DoormanAPI --> MailService
-DoormanAPI --> SearchService
-DoormanAPI --> CategoryManager
-DoormanAPI --> LLMAnalyzer
-DoormanAPI --> FeedbackLearner
-
-MailService --> ExternalMailGateway
-MailService --> EmailPreprocessor
-MailService --> MailboxOrganizer
-MailService --> NotificationService
-MailService --> Email
-
-CategoryManager --> Category
-MailboxOrganizer --> Mailbox
-SearchService --> Email
-AuthService --> SessionToken
-AuthService --> User
-
-LLMAnalyzer --> HallucinationMitigator
-LLMAnalyzer --> PromptManager
-LLMAnalyzer --> UserProfile
-LLMAnalyzer --> AnalysisResult
-FeedbackLearner --> CorrectionRecord
-FeedbackLearner --> PromptManager
-HallucinationMitigator --> AnalysisResult
-
-DashboardView --> Mailbox
-EmailListView --> Email
-EmailDetailView --> AnalysisResult
-ProfileSettingsView --> UserProfile
-ProfileSettingsView --> Category
-ProfileSettingsView --> CustomActionTemplate
 @enduml
