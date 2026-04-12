@@ -1,94 +1,188 @@
 @startuml
 skinparam classAttributeIconSize 0
+skinparam shadowing false
 left to right direction
 
 package "Client" {
-  class MailClient {
+  class MailClient <<boundary>> {
     -clientId: String
+    +register(email, password)
     +login(email, password)
+    +logout()
     +searchMail(keyword)
     +openEmail(emailId)
     +correctCategory(emailId, categoryId)
   }
+
+  class DashboardView <<boundary>> {
+    +showMailboxOverview()
+    +showUrgentEmails()
+  }
+
+  class EmailListView <<boundary>> {
+    +renderEmailList()
+    +sortByPriority()
+  }
+
+  class EmailDetailView <<boundary>> {
+    +renderEmailDetail()
+    +showSuggestedActions()
+  }
+
+  class ProfileSettingsView <<boundary>> {
+    +editProfile()
+    +manageCategories()
+    +manageCustomActions()
+  }
 }
 
-package "Core Services" {
-  class MailServer {
-    -serverId: String
-    +receiveEmail(rawMail)
-    +storeEmail(email)
-    +sendForAnalysis(email)
+package "Interfaces" {
+  interface IDoormanService {
+    +register(email, password)
+    +login(email, password): SessionToken
+    +logout(token)
+    +searchMail(criteria): Email[*]
+    +updateProfile(profile)
+    +correctCategory(emailId, categoryId)
   }
 
-  class EmailPreprocessor {
-    +extractData(rawMail): Email
-    +cleanContent(email): Email
-    +normalizeMetadata(email): Email
+  interface IExternalMailService {
+    +fetchIncomingMail(): Email[*]
+    +sendMail(email): boolean
   }
 
-  class MailboxOrganizer {
-    +assignMailbox(email, category)
-    +moveToUncategorized(email)
-  }
-
-  class LLMModule {
+  interface ILLMAnalysisService {
     +classifyEmail(email, profile): Category
     +scorePriority(email, profile): int
     +suggestActions(email, profile): SuggestedAction[*]
   }
+}
 
-  class HallucinationMitigator {
+package "Server" {
+  class DoormanAPI <<controller>> {
+    +register()
+    +login()
+    +logout()
+    +searchMail()
+    +updateProfile()
+    +requestAnalysis()
+  }
+
+  class AuthService <<service>> {
+    +authenticate(email, password): SessionToken
+    +invalidate(token)
+  }
+
+  class MailServer <<active>> {
+    +receiveEmail(rawMail)
+    +storeEmail(email)
+    +sendMail(email)
+    +requestLLMAnalysis(email, profile)
+  }
+
+  class EmailPreprocessor <<service>> {
+    +extractStructuredData(rawMail): Email
+    +cleanContent(email): Email
+    +normalizeMetadata(email): Email
+  }
+
+  class SearchService <<service>> {
+    +search(criteria): Email[*]
+  }
+
+  class CategoryManager <<service>> {
+    +createCategory(userId, name): CustomCategory
+    +modifyCategory(categoryId, name)
+    +applyCategory(emailId, categoryId)
+  }
+
+  class MailboxOrganizer <<service>> {
+    +assignMailbox(email, category)
+    +moveToUncategorized(email)
+  }
+
+  class NotificationService <<service>> {
+    +notifyImportantEmail(email)
+  }
+
+  class ExternalMailGateway <<gateway>> {
+    +fetchIncomingMail(): Email[*]
+    +sendMail(email): boolean
+  }
+}
+
+package "LLM Module" {
+  class LLMModuleFacade <<active>> {
+    +analyze(email, profile): EmailAnalysis
+  }
+
+  class EmailClassifier <<service>> {
+    +classify(email, profile): Category
+  }
+
+  class PriorityScorer <<service>> {
+    +score(email, profile): int
+  }
+
+  class ActionRecommender <<service>> {
+    +suggest(email, profile): SuggestedAction[*]
+  }
+
+  class HallucinationMitigator <<service>> {
     +validateOutput(email, output): boolean
     +reprocessInvalidOutput(output)
   }
 
-  interface ExternalMailService {
-    +fetchIncomingMail()
-    +sendMail(email)
+  class PromptManager <<service>> {
+    +buildPrompt(profile): String
+    +updatePrompt(correction)
   }
 }
 
 package "Domain" {
-  class User {
+  class User <<entity>> {
     -userId: String
     -emailAddress: String
-    +login()
-    +logout()
-    +updateProfile()
+    -passwordHash: String
   }
 
-  class UserProfile {
+  class SessionToken <<entity>> {
+    -token: String
+    -expiresAt: DateTime
+  }
+
+  class UserProfile <<entity>> {
     -userType: UserType
     -interests: String[*]
     -affiliations: String[*]
     +editProfile()
   }
 
-  class ImportantContact {
-    -contactEmail: String
+  class ImportantContact <<entity>> {
     -name: String
+    -emailAddress: String
   }
 
-  abstract class Mailbox {
+  abstract class Mailbox <<entity>> {
     -mailboxId: String
     -name: String
     +addEmail(email)
     +removeEmail(email)
   }
 
-  class AllMailbox
-  class CategoryMailbox
-  class UncategorizedMailbox
+  class AllMailbox <<entity>>
+  class CategoryMailbox <<entity>>
+  class UncategorizedMailbox <<entity>>
 
-  abstract class Category {
+  abstract class Category <<entity>> {
     -categoryId: String
     -label: String
   }
 
-  class PredefinedCategory
-  class CustomCategory
+  class PredefinedCategory <<entity>>
+  class CustomCategory <<entity>>
 
-  class Email {
+  class Email <<entity>> {
     -emailId: String
     -sender: String
     -receiver: String
@@ -97,27 +191,33 @@ package "Domain" {
     -receivedAt: DateTime
   }
 
-  class Attachment {
+  class Attachment <<entity>> {
+    -attachmentId: String
     -fileName: String
     -mimeType: String
     -size: long
   }
 
-  class EmailAnalysis {
+  class EmailAnalysis <<entity>> {
+    -analysisId: String
     -priorityScore: int
     -validated: boolean
     +updateResult()
   }
 
-  abstract class SuggestedAction {
+  abstract class SuggestedAction <<entity>> {
     -actionName: String
     -reason: String
   }
 
-  class StandardAction
-  class CustomAction
+  class StandardAction <<entity>>
+  class CustomAction <<entity>> {
+    -parameters: String
+    -description: String
+  }
 
-  class CorrectionRecord {
+  class CorrectionRecord <<entity>> {
+    -correctionId: String
     -correctedAt: DateTime
     -oldCategory: String
     -newCategory: String
@@ -132,43 +232,83 @@ package "Domain" {
   }
 }
 
+' Generalization
 Mailbox <|-- AllMailbox
 Mailbox <|-- CategoryMailbox
 Mailbox <|-- UncategorizedMailbox
-
 Category <|-- PredefinedCategory
 Category <|-- CustomCategory
-
 SuggestedAction <|-- StandardAction
 SuggestedAction <|-- CustomAction
 
+' Composition / Aggregation
 User "1" *-- "1" UserProfile : owns
 User "1" *-- "1" AllMailbox : has
 User "1" *-- "0..*" CategoryMailbox : creates
 User "1" *-- "1" UncategorizedMailbox : has
 UserProfile "1" *-- "0..*" ImportantContact : contains
+User "1" *-- "0..*" CustomAction : defines
+User "1" o-- "0..*" CorrectionRecord : submits
 AllMailbox "1" *-- "0..*" Email : stores
 Email "1" *-- "0..*" Attachment : contains
 Email "1" *-- "0..1" EmailAnalysis : has
 EmailAnalysis "1" *-- "0..*" SuggestedAction : recommends
-
 CategoryMailbox "1" o-- "1" Category : represents
-User "1" o-- "0..*" CorrectionRecord : submits
 
-MailClient "1" -- "1" User : usedBy
-MailClient "1" -- "1" MailServer : sends requests to
-MailServer "1" --> "1" EmailPreprocessor : preprocesses with
-MailServer "1" --> "1" LLMModule : requests analysis from
-MailServer "1" --> "1" MailboxOrganizer : organizes with
-MailServer "1" ..> "1" ExternalMailService : uses
-LLMModule "1" --> "1" HallucinationMitigator : validates with
-LLMModule "1" --> "0..*" Email : analyzes
-LLMModule "1" --> "1" UserProfile : reads
-MailboxOrganizer "1" --> "0..*" CategoryMailbox : assigns to
-MailboxOrganizer "1" --> "1" UncategorizedMailbox : fallback to
-CategoryMailbox "0..1" -- "0..*" Email : classifiedIn
+' Associations
+CategoryMailbox "0..1" -- "0..*" Email : groups
 UncategorizedMailbox "0..1" -- "0..*" Email : holds
-CorrectionRecord "1" --> "1" EmailAnalysis : updates
 CorrectionRecord "1" --> "1" Email : corrects
+EmailAnalysis "1" --> "1" Category : assigns
+User "1" -- "0..*" SessionToken : receives
+MailClient "1" -- "1" User : usedBy
+DashboardView --> Mailbox
+EmailListView --> Email
+EmailDetailView --> EmailAnalysis
+ProfileSettingsView --> UserProfile
+ProfileSettingsView --> Category
+ProfileSettingsView --> CustomAction
+
+' Provided / Required interfaces
+MailClient ..> IDoormanService : requires
+DoormanAPI ..|> IDoormanService : provides
+MailServer ..> IExternalMailService : requires
+ExternalMailGateway ..|> IExternalMailService : provides
+MailServer ..> ILLMAnalysisService : requires
+LLMModuleFacade ..|> ILLMAnalysisService : provides
+
+' Service dependencies
+DoormanAPI --> AuthService
+DoormanAPI --> MailServer
+DoormanAPI --> SearchService
+DoormanAPI --> CategoryManager
+DoormanAPI --> NotificationService
+MailServer --> EmailPreprocessor
+MailServer --> MailboxOrganizer
+SearchService --> AllMailbox
+CategoryManager --> CustomCategory
+CategoryManager --> CategoryMailbox
+MailboxOrganizer --> CategoryMailbox
+MailboxOrganizer --> UncategorizedMailbox
+NotificationService --> EmailAnalysis
+ExternalMailGateway --> Email
+
+LLMModuleFacade *-- EmailClassifier
+LLMModuleFacade *-- PriorityScorer
+LLMModuleFacade *-- ActionRecommender
+LLMModuleFacade *-- HallucinationMitigator
+LLMModuleFacade *-- PromptManager
+
+EmailClassifier ..> Email
+EmailClassifier ..> UserProfile
+EmailClassifier --> Category
+PriorityScorer ..> Email
+PriorityScorer ..> UserProfile
+ActionRecommender ..> Email
+ActionRecommender ..> UserProfile
+ActionRecommender --> SuggestedAction
+HallucinationMitigator --> EmailAnalysis
+PromptManager ..> UserProfile
+PromptManager ..> CorrectionRecord
 
 @enduml
